@@ -1,19 +1,17 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
 type middleware struct {
-	redisClient *redis.Client
+	rateLimiter *RateLimiter
 }
 
 func (m *middleware) limitRate(next http.HandlerFunc) http.HandlerFunc {
@@ -23,40 +21,18 @@ func (m *middleware) limitRate(next http.HandlerFunc) http.HandlerFunc {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if err := m.consumeToken(r.Context(), ip); err != nil {
+		isRateLimited, err := m.rateLimiter.isRateLimited(r.Context(), ip)
+		if isRateLimited {
 			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
 		next.ServeHTTP(w, r)
 	}
-}
-
-func (m *middleware) getTokens(ctx context.Context, ip string) int64 {
-	currentTime := time.Now().Unix()
-	lastRefilledTime, err := m.redisClient.HGet(ctx, ip, "last_refilled_time").Int64()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		return 0
-	}
-	tokens, err := m.redisClient.HGet(ctx, ip, "tokens").Int64()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		return 0
-	}
-	elapsedTime := currentTime - lastRefilledTime
-	if elapsedTime >= 10 {
-		tokens = 10
-	}
-	m.redisClient.HSet(ctx, ip, "last_refilled_time", currentTime, "tokens", tokens)
-	return tokens
-}
-
-func (m *middleware) consumeToken(ctx context.Context, ip string) error {
-	tokens := m.getTokens(ctx, ip)
-	if tokens <= 0 {
-		return errors.New("not enough tokens")
-	}
-	m.redisClient.HIncrBy(ctx, ip, "tokens", -1)
-	return nil
 }
 
 func getIP(r *http.Request) (string, error) {
@@ -97,8 +73,11 @@ func main() {
 		DB:       0,
 		PoolSize: 1000,
 	})
-	m := middleware{
+	r := RateLimiter{
 		redisClient: redisClient,
+	}
+	m := middleware{
+		rateLimiter: &r,
 	}
 	http.HandleFunc("/", m.limitRate(handler))
 	http.ListenAndServe(":8080", nil)
