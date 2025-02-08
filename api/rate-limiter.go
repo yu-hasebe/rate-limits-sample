@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -16,13 +17,13 @@ type RateLimiter struct {
 func (r *RateLimiter) isRateLimited(ctx context.Context, ip string) (bool, error) {
 	tokens, err := r.getTokens(ctx, ip)
 	if err != nil {
-		return false, err
+		return true, err
 	}
 	if tokens <= 0 {
-		return false, nil
+		return true, nil
 	}
 	r.redisClient.HIncrBy(ctx, ip, "tokens", -1)
-	return true, nil
+	return false, nil
 }
 
 func (r *RateLimiter) getTokens(ctx context.Context, ip string) (int64, error) {
@@ -36,9 +37,10 @@ func (r *RateLimiter) getTokens(ctx context.Context, ip string) (int64, error) {
 		return 0, err
 	}
 	elapsedTime := currentTime - lastRefilledTime
+	log.Printf("ip: %s, currentTime: %d, lastRefilledTime: %d, elapsedTime: %d, token: %d", ip, currentTime, lastRefilledTime, elapsedTime, tokens)
 	if elapsedTime >= 10 {
 		tokens = 10
+		r.redisClient.HSet(ctx, ip, "last_refilled_time", currentTime, "tokens", tokens)
 	}
-	r.redisClient.HSet(ctx, ip, "last_refilled_time", currentTime, "tokens", tokens)
 	return tokens, nil
 }
