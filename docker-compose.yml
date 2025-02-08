@@ -1,0 +1,21 @@
+services:
+  api:
+    build:
+      context: ./api/
+      dockerfile: ./Dockerfile
+    container_name: rate-limit-sample-api
+    image: rate-limit-sample-api:latest
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+  redis:
+    build:
+      context: ./redis/
+      dockerfile: ./Dockerfile
+    container_name: rate-limit-sample-redis
+    image: rate-limit-sample-redis:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis/data:/data
