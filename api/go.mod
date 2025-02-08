@@ -1,4 +1,4 @@
-module github.com/yu-hasebe/rate-limit-sample
+module github.com/yu-hasebe/rate-limits-sample
 
 go 1.23.2
 
