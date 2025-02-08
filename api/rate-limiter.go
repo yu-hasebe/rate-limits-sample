@@ -9,6 +9,11 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const (
+	UNIT_SECONDS     = 10
+	REQUEST_PER_UNIT = 10
+)
+
 type RateLimiter struct {
 	redisClient *redis.Client
 }
@@ -37,10 +42,12 @@ func (r *RateLimiter) getTokens(ctx context.Context, ip string) (int64, error) {
 		return 0, err
 	}
 	elapsedTime := currentTime - lastRefilledTime
-	log.Printf("ip: %s, currentTime: %d, lastRefilledTime: %d, elapsedTime: %d, token: %d", ip, currentTime, lastRefilledTime, elapsedTime, tokens)
-	if elapsedTime >= 10 {
-		tokens = 10
+	if elapsedTime >= UNIT_SECONDS {
+		tokens = REQUEST_PER_UNIT
 		r.redisClient.HSet(ctx, ip, "last_refilled_time", currentTime, "tokens", tokens)
 	}
+
+	log.Printf("ip: %s, currentTime: %d, lastRefilledTime: %d, elapsedTime: %d, token: %d", ip, currentTime, lastRefilledTime, elapsedTime, tokens)
+
 	return tokens, nil
 }
